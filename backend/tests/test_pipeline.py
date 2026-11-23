@@ -309,15 +309,16 @@ class TestParseRetry:
 
     def test_retry_execution(self):
         batch_key = _uid("BT")
+        retry_id = _uid("RETRY")
         svc = ParseRetryService()
         task = {
-            "重采编号": "RETRY-00099", "失败环节": "格式解析",
+            "重采编号": retry_id, "失败环节": "格式解析",
             "原始批次": batch_key, "失败原因": "测试", "重试次数": "0",
             "重采范围": "DOC-X", "恢复游标": "0", "重采结果": "", "status": "待重采",
         }
         tf = DATA_ROOT / "retries" / f"{batch_key}_retries.jsonl"
         svc._write_jsonl(tf, [task])
-        result = svc.execute_retry("RETRY-00099")
+        result = svc.execute_retry(retry_id)
         assert result.get("status") != "已放弃", f"不应放弃: {result}"
 
 

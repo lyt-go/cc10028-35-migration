@@ -141,6 +141,50 @@ class BaseModuleService:
                         continue
         return records
 
+    def _write_jsonl_atomic(self, filepath: Path, records: list[dict[str, Any]]) -> int:
+        """整文件原子替换写入JSONL，用于交付索引等不能被中断写坏的清单文件。"""
+        _ensure_dir(filepath.parent)
+        tmp = filepath.with_name(filepath.name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, filepath)
+        return len(records)
+
+    def _write_json_atomic(self, filepath: Path, payload: dict[str, Any]) -> Path:
+        """原子写入JSON对象，供快照清单、索引快照使用。"""
+        _ensure_dir(filepath.parent)
+        tmp = filepath.with_name(filepath.name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, filepath)
+        return filepath
+
+    def _read_json(self, filepath: Path) -> dict[str, Any] | None:
+        """读取JSON对象，文件缺失或损坏返回None。"""
+        if not filepath.exists():
+            return None
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def _file_checksum(self, filepath: Path) -> str:
+        """流式计算文件SHA256（取前16位），用于分片与快照清单的完整性比对。"""
+        if not filepath.exists():
+            return ""
+        digest = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for block in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()[:16]
+
     def _write_checkpoint(self, name: str, state: dict[str, Any]) -> Path:
         """写入检查点文件，用于中断恢复与游标推进。检查点记录当前处理偏移和状态。"""
 # 数据操作：存储检查点数据管理中断恢复与游标推进

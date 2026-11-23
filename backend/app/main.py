@@ -5,14 +5,30 @@
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import ROUTERS
+from app.services.result_deliver import ResultDeliverService
 from app.store import store
 
-app = FastAPI(title="文档解析与知识抽取平台", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """启动时把旧交付明细迁移进交付索引 v2，迁移失败不影响服务可用。"""
+    try:
+        ResultDeliverService().migrate_legacy_deliveries()
+    except Exception:
+        # 中断可重跑续迁；旧的交付文件仍原样保留，读取方可以继续下载。
+        pass
+    yield
+
+
+app = FastAPI(title="文档解析与知识抽取平台", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

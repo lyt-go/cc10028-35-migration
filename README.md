@@ -16,6 +16,7 @@
 │   └── vite.config.ts        dev server 配置（open: false）
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/resource.py  通用查询/导出/登记/动作接口
+│   ├── app/routers/deliver_index.py  交付索引 v2 接口（迁移/补发/下载/回执）
 │   ├── app/services/<key>.py    每个模块独立领域逻辑
 │   ├── app/services/base.py     共享服务骨架
 │   └── app/store.py          内存数据仓库与示例数据
@@ -68,6 +69,27 @@ npm run dev
 | 抽取血缘 | `extract_lineage` | 血缘链路 | 链路编号、源文件、解析节点 |
 | 结果交付 | `result_deliver` | 交付任务 | 交付编号、快照编号、交付格式 |
 | 失败重采 | `parse_retry` | 重采任务 | 重采编号、失败环节、原始批次 |
+
+## 交付索引 v2
+
+`result_deliver` 在原有「一快照一份交付记录 + 分片」之上维护兼容版本的交付索引
+`data/deliveries/delivery_index_v2.json`（schema 版本 2，兼容读取 v1 交付文件）。
+
+- **旧数据迁移**：`POST /api/delivery-index/migrate`（启动时自动执行一次）。逐快照
+  原子落盘并写检查点，升级中断后重跑可续；索引缺失或回滚到旧版本时，读取方回退到
+  旧交付文件，已核实分片仍可下载。
+- **可查内容**：快照当时的文档计数（分页/分块/实体/三元组）、可找回的抽取产物
+  （以分片内冻结副本为准）、原始回执（接收回执/下载回执）、分片关联明细。
+- **补发查询**：`GET /api/delivery-index/resend?doc_id=&snapshot_id=`，按
+  `可补发` / `仅回执可查` / `不可补发` 区分；多版本共存时按文档一次性列出。
+- **分片下载**：`GET /api/delivery-index/{snapshot_id}/shards/{shard_no}`，返回前用
+  索引/回执中的校验值核实，不匹配拒发。
+- **待核归属**：交付后新增或被更正的实体/关系只登记为 `待核`，确认前不计入旧版成品、
+  不参与补发；复核入口 `POST /api/delivery-index/{snapshot_id}/pending-review`。
+- **回执登记**：`POST /api/delivery-index/{snapshot_id}/receipts`。
+- 旧快照重跑 `deliver_from_snapshot` 默认复用历史成品，不覆盖已发出的分片。
+
+前端对应页面：`/delivery-index`（交付索引 v2）。
 
 ## 约定
 
